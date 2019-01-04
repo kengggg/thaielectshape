@@ -106,7 +106,7 @@ df['เขตเลือกตั้งที่'].loc[startindex+32:startindex
 # df['เขตเลือกตั้งที่'].loc[1502:1503] = '4'
 
 df['ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง'].replace('\d{1,2}.\s|^และ', '', regex=True, inplace=True)
-df.replace('เทศบาลตำบล', 'ตำบล', regex=True, inplace=True)
+df.replace('^ตำบล', '', regex=True, inplace=True)
 df.replace('อำเภอ|^ตำบล|เขต|แขวง', '', regex=True, inplace=True)### for test
 # for i in range(1, 78):
 #     i = str(i)
@@ -132,15 +132,20 @@ def clean_brace(dframe, delstart):
 
 
 df['only'] = ''
-df['only']=clean_brace(df['only'], 'เฉพาะ')
+df['only']=clean_brace(df['only'], 'เฉพาะตำบล')
 
 df['exclude'] = ''
-df['exclude']=clean_brace(df['exclude'], 'ยกเว้น')
+df['exclude']=clean_brace(df['exclude'], 'ยกเว้นตำบล')
 
 
 def clean_tesban(df):
-    for i in df[~df.str.startswith('ตำบล') & df.str.contains("^\w", regex=True)].index:
-        if not any(df.iloc[i+1].startswith(x) for x in ['เทศบาล', 'แขวง']) and \
+    # for i in df[~df.str.startswith('ตำบล') & df.str.contains("^\w", regex=True)].index:
+    #     if not any(df.iloc[i+1].startswith(x) for x in ['เทศบาล', 'แขวง']) and \
+    #             len(df.iloc[i+1])>0:
+    #         df.iloc[i]=df.iloc[i]+df.iloc[i+1]
+    #         df.iloc[i+1]=''
+    for i in df[df.str.startswith('เทศบาล') & df.str.contains("^\w", regex=True)].index:
+        if not any(df.iloc[i+1].startswith(x) for x in ['เทศบาล', 'ตำบล']) and \
                 len(df.iloc[i+1])>0:
             df.iloc[i]=df.iloc[i]+df.iloc[i+1]
             df.iloc[i+1]=''
@@ -177,7 +182,7 @@ df.to_csv('electzone-processed.csv')
 
 from shptocsv import shptodf
 
-shpdf=shptodf('/Users/phoneee/Downloads/tambon 1/tambon.shp')
+shpdf=shptodf('tambon/tambon.shp')
 
 
 shpdf['ap_tn']=shpdf['ap_tn'].str.strip()
@@ -194,7 +199,7 @@ merrgefail=merge[['จังหวัด','ท้องที่ที่ปร�
 
 
 
-shpdf=shptodf('/Users/phoneee/Downloads/tambon/tambon.shp')
-shpdf['A_NAME_T']=shpdf['A_NAME_T'].str.strip()
-merge=pd.merge(df, shpdf, how='left', left_on=['จังหวัด', 'ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง'], right_on=['P_NAME_T', 'A_NAME_T'])
-merrgefail=merge[['จังหวัด','ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง']][merge['T_NAME_T'].isna()]
+# shpdf=shptodf('/tambon/tambon.shp')
+# shpdf['A_NAME_T']=shpdf['A_NAME_T'].str.strip()
+# merge=pd.merge(df, shpdf, how='left', left_on=['จังหวัด', 'ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง'], right_on=['P_NAME_T', 'A_NAME_T'])
+# merrgefail=merge[['จังหวัด','ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง']][merge['T_NAME_T'].isna()]
