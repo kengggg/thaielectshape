@@ -125,6 +125,55 @@ df.replace('อำเภอ|^ตำบล|เขต|แขวง', '', regex=Tru
 #     for val in vals:
 #         print(df['ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง'][(df['เขตเลือกตั้งที่'] == val) & (df['ลำดับที่'] == i)].iloc[0])
 
+def clean_tesban(df):
+    # for i in df[~df.str.startswith('ตำบล') & df.str.contains("^\w", regex=True)].index:
+    #     if not any(df.iloc[i+1].startswith(x) for x in ['เทศบาล', 'แขวง']) and \
+    #             len(df.iloc[i+1])>0:
+    #         df.iloc[i]=df.iloc[i]+df.iloc[i+1]
+    #         df.iloc[i+1]=''
+    for i in df[df.str.startswith('เทศบาลเมือง') | df.str.startswith('เทศบาลนคร')].index:
+        if not any(df.iloc[i + 1].startswith(x) for x in ['เทศบาล', 'ตำบล']) and \
+                len(df.iloc[i + 1]) > 0 or df.iloc[i].endswith("-"):
+            df.iloc[i] = df.iloc[i] + df.iloc[i + 1]
+            df.iloc[i + 1] = ''
+        df.iloc[i] = df.iloc[i].replace('(', '')
+    isstart = False
+    for i in df.index:
+        if df.iloc[i]:
+            isstart = True
+            startloc = i - 1
+        else:
+            startloc = 0
+        conditionlist = []
+        k = 0
+        while isstart:
+            if df.iloc[i + k]:
+                conditionlist.append(df.iloc[i + k])
+            else:
+                isstart = False
+            df.iloc[i + k] = ''
+            k += 1
+        if startloc != 0:
+            df.iloc[startloc] = conditionlist
+
+
+def getGeoCode(P, A=None, T=None):
+    try:
+        if P and (A == None or A == "ทั้งจังหวัด") and T == None:
+            return str(shpdf.loc[(shpdf['P_NAME_T'].str.contains(P)), 'P_CODE'].iloc[0])
+        if P and A and T == None:
+            if A == "ทั้งจังหวัด":
+                return None
+            else:
+                return str(shpdf.loc[(shpdf['P_NAME_T'].str.contains(P)) &
+                                     (shpdf['A_NAME_T'].str.contains(A)), 'A_CODE'].iloc[0])
+        if P and A and T:
+            return str(shpdf.loc[(shpdf['P_NAME_T'].str.contains(P)) &
+                                 (shpdf['A_NAME_T'].str.contains(A)) &
+                                 (shpdf['T_NAME_T'].str.contains(T)), 'T_CODE'].iloc[0])
+    except:
+        return None
+
 
 def clean_brace(dframe, delstart):
     havecondition = False
@@ -154,37 +203,6 @@ df['exterior'] = clean_brace(df['exterior'], ['ยกเว้นตำบล', 
 
 
 #
-def clean_tesban(df):
-    # for i in df[~df.str.startswith('ตำบล') & df.str.contains("^\w", regex=True)].index:
-    #     if not any(df.iloc[i+1].startswith(x) for x in ['เทศบาล', 'แขวง']) and \
-    #             len(df.iloc[i+1])>0:
-    #         df.iloc[i]=df.iloc[i]+df.iloc[i+1]
-    #         df.iloc[i+1]=''
-    for i in df[df.str.endswith('เทศบาลเมือง') | df.str.endswith('เทศบาลนคร')].index:
-        if not any(df.iloc[i + 1].startswith(x) for x in ['เทศบาล', 'ตำบล']) and \
-                len(df.iloc[i + 1]) > 0:
-            df.iloc[i] = df.iloc[i] + df.iloc[i + 1]
-            df.iloc[i + 1] = ''
-        df.iloc[i] = df.iloc[i].replace('(', '')
-    isstart = False
-    for i in df.index:
-        if df.iloc[i]:
-            isstart = True
-            startloc = i - 1
-        else:
-            startloc = 0
-        conditionlist = []
-        k = 0
-        while isstart:
-            if df.iloc[i + k]:
-                conditionlist.append(df.iloc[i + k])
-            else:
-                isstart = False
-            df.iloc[i + k] = ''
-            k += 1
-        if startloc != 0:
-            df.iloc[startloc] = conditionlist
-
 
 df.replace('[()]', '', regex=True, inplace=True)
 clean_tesban(df.interior)
@@ -215,10 +233,13 @@ df.to_csv('electzone-processed.csv')
 
 from shptocsv import shptodf
 
-# shpdf = shptodf('tambon_old/tambon_old.shp')
 shpdf = shptodf('tambon/TH_Tambon.shp')
 
+shpdf["P_CODE"]=shpdf["P_CODE"].apply(str)
+shpdf["A_CODE"]=shpdf["A_CODE"].apply(str)
+
 shpdf['A_NAME_T'] = shpdf['A_NAME_T'].str.strip()
+shpdf['A_NAME_T'] = shpdf['A_NAME_T'].str.replace('กิ่งอำเภอ','')
 shpdf.loc[shpdf['A_NAME_T'] == 'ป้อมปราบศัตรูพ่า', 'A_NAME_T'] = 'ป้อมปราบศัตรูพ่าย'
 shpdf.loc[shpdf['A_NAME_T'] == 'เมืองนครศรีธรรมร', 'A_NAME_T'] = 'เมืองนครศรีธรรมราช'
 shpdf.loc[shpdf['A_NAME_T'] == 'เมืองสุราษฎร์ธาน', 'A_NAME_T'] = 'เมืองสุราษฎร์ธานี'
@@ -227,16 +248,42 @@ shpdf.loc[shpdf['A_NAME_T'] == 'ป่าพยอม', 'A_NAME_T'] = 'ป่า
 shpdf.loc[shpdf['A_NAME_T'] == 'เมืองประจวบคีรีข', 'A_NAME_T'] = 'เมืองประจวบคีรีขันธ์'
 shpdf.loc[shpdf['A_NAME_T'] == 'ว่านใหญ่', 'A_NAME_T'] = 'หว้านใหญ่'
 shpdf.loc[shpdf['A_NAME_T'] == 'บึงกาฬ', 'A_NAME_T'] = 'เมืองบึงกาฬ'
+shpdf.loc[shpdf['A_NAME_T'] == 'สุไหงโกลก', 'A_NAME_T'] = 'สุไหงโก-ลก'
 
-# shpdf['AMP_NAME'][shpdf['AMP_NAME']=='เมือง']=shpdf['AMP_NAME'][shpdf['AMP_NAME']=='เมือง']+shpdf['PRV_NAME'][shpdf['AMP_NAME']=='เมือง']
-# merge = pd.merge(df, shpdf, how='left', left_on=['จังหวัด', 'ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง'],
-#                  right_on=['pv_tn', 'ap_tn'])
-# merrgefail = merge[['จังหวัด', 'ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง']][merge['ap_tn'].isna()]
+
+## เปลี่ยนชื่ออำเภอจาก หนองบุนนาก เป็น หนองบุญมาก
+shpdf.loc[shpdf['A_NAME_T'] == 'หนองบุนนาก', 'A_NAME_T'] = 'หนองบุญมาก'
+
+## เปลี่ยน shpdf.loc[shpdf['A_NAME_T'] == 'กิ่งอำเภอเอราวัณ', 'A_NAME_T'] = 'เอราวัณ'
+shpdf.loc[shpdf['A_NAME_T'] == 'กิ่งอำเภอเอราวัณ', 'A_NAME_T'] = 'เอราวัณ'
+
+### อำเภอกัลยาณิวัฒนา เชียงใหม่ เปลี่ยนชื่อจาก ตำบลบ้านจันทร์
+shpdf.loc[(shpdf['P_NAME_T'] == 'เชียงใหม่') &
+           shpdf['A_NAME_T'].str.contains('แม่แจ่ม') &
+           shpdf['T_NAME_T'].str.contains('บ้านจันทร์'),
+         ['A_NAME_T']] = "กัลยาณิวัฒนา"
+shpdf.loc[shpdf['A_NAME_T'] == 'กัลยาณิวัฒนา','A_CODE']="25"
+
+### อำเภแเวียงเก่า ขอนแก่น
+shpdf.loc[(shpdf['P_NAME_T'] == 'ขอนแก่น') &
+           shpdf['A_NAME_T'].str.contains('ภูเวียง') &
+          (shpdf['T_NAME_T'].str.contains('ในเมือง') |
+           shpdf['T_NAME_T'].str.contains('เมืองเก่าพัฒนา') |
+           shpdf['T_NAME_T'].str.contains('เขาน้อย')),
+         ['A_NAME_T']] = "เวียงเก่า"
+shpdf.loc[shpdf['A_NAME_T'] == 'เวียงเก่า','A_CODE']="29"
+
+
+
+
+df["p_code"]=df.apply(lambda x: getGeoCode(x['จังหวัด']), axis=1)
+df["a_code"]=df.apply(lambda x: getGeoCode(x['จังหวัด'], x['ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง']), axis=1)
+
 
 
 # shpdf['A_NAME_T']=shpdf['A_NAME_T'].str.strip()
-merge = pd.merge(df, shpdf, how='left', left_on=['จังหวัด', 'ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง'],
-                 right_on=['P_NAME_T', 'A_NAME_T'])
+merge = pd.merge(df, shpdf, how='left', left_on=['p_code', 'a_code'],
+                 right_on=['P_CODE', 'A_CODE'])
 merrgefail = merge[['จังหวัด', 'ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง']][merge['T_NAME_T'].isna()]
 
 shpdf['A_NAME_T'][(shpdf['P_NAME_T'] == 'ยะลา') & shpdf['A_NAME_T'].str.contains('สนาม')]  ##fortest
@@ -245,31 +292,47 @@ shpdf['A_NAME_T'][(shpdf['P_NAME_T'] == 'ยะลา') & shpdf['A_NAME_T'].str.
 # subdistbkkshp["SNAME"] = subdistbkkshp["SNAME"].replace("^แขวง", "", regex=True)
 # subdistbkkshp["DNAME"] = subdistbkkshp["DNAME"].replace("^เขต", "", regex=True)
 
-onlydf=pd.DataFrame(df.interior[df.interior != ''].tolist(), index=df.จังหวัด[df.interior != '']).stack().reset_index(name='interior')[['interior','จังหวัด']]
-onlymerge = pd.merge(onlydf, shpdf, how='left', left_on=['จังหวัด', 'interior'],
-                 right_on=['P_NAME_T', 'T_NAME_T'])
-onlymerrgefail = onlymerge[['จังหวัด', 'interior']][onlymerge['A_NAME_T'].isna()]
+onlydf=pd.DataFrame(pd.DataFrame(df.interior[df.interior != ''].tolist(), index=df.index[df.interior != '']).stack(),columns=['interior'])
+tempdf=[]
+for i in onlydf.index:
+    tempdf.append([df.loc[i[0],["จังหวัด"]].iloc[0],df.loc[i[0],["ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง"]].iloc[0],onlydf.loc[i].iloc[0]])
+onlydf=pd.DataFrame(tempdf,columns=["P","A","T"])
+onlymerge = pd.merge(onlydf, shpdf, how='left', left_on=['P', 'A', 'T'],
+                 right_on=['P_NAME_T', 'A_NAME_T', 'T_NAME_T'])
+onlymerrgefail = onlymerge[['P', 'A', 'T']][onlymerge['A_NAME_T'].isna()]
 
 
-[{"id": "6001", "name": "เมืองนครสวรรค์",
-  "condition": {"id": "600106", "name": "นครสวรรค์ตก", "divisonType": "ตำบล", "conditionType": "interior",
-                "condition": {"id": "600106", "name": "นครนครสวรรค์"}}}]
+[{"id": "6001",
+  "name": "เมืองนครสวรรค์",
+  "condition": [{"operator":"interior",
+                 "id": "600106",
+                "name": "นครสวรรค์ตก",
+                "divisonType": "ตำบล"},
+                {"divisonType": "เทศบาล",
+                 "name": "นครนครสวรรค์",
+                 "conditionType": "interior"}]}]
 
 th_map_df=pd.read_csv("th_map.csv")
 th_map_df['id'] = th_map_df['id'].apply(str)
-def getGeoCode(P, A=None, T=None):
-    if P and A==None and T==None:
-        return th_map_df.loc[(th_map_df['id'].str.len() == 2) &
-                             (th_map_df['name'] == P), 'id'].iloc[0]
-    if P and A and T==None:
-        p_id=getGeoCode(P)
-        return th_map_df.loc[(th_map_df['id'].str.len() == 4) &
-                             (th_map_df['id'].str.startswith(p_id)) &
-                             (th_map_df['name'] == A), 'id'].iloc[0]
-    if P and A and T:
-        a_id = getGeoCode(P, A)
-        return th_map_df.loc[(th_map_df['id'].str.len() == 6) &
-                             (th_map_df['id'].str.startswith(a_id)) &
-                             (th_map_df['name'] == T), 'id'].iloc[0]
 
 
+
+import requests
+key="D0B70A7F-8517CB28-588C0685-7DDBD2A0-B17E68EE-4C08413F-DED60B5F-E3B5C36F"
+bbox={'lon_min':'104.026',
+'lon_max':'104.8650',
+'lat_min':'16.677',
+'lat_max':'18.009'}
+bbox='{0[lon_min]},{0[lat_min]},{0[lon_max]},{0[lat_max]}'.format(bbox)
+# "http://api.wikimapia.org/?key={}&function=box&coordsby=bbox&bbox=104.297,17.042,104.848,17.718&category=7227&count=100&format=json
+url = f"http://api.wikimapia.org/?key={key}&function=box&coordsby=bbox&bbox={bbox}&language=th&category=7227&count=100&format=json"
+j=requests.get(url).json()
+
+k=[x for x in j['folder'] if x['name']=='เทศบาลเมืองนครพนม'][0]
+geom={}
+geom['type']='Polygon'
+geom['coordinates']=[[[x['x'],x['y']] for x in k["polygon"]]]
+
+
+import geopandas as gpd
+gpd.read_file()

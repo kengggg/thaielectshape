@@ -1,11 +1,13 @@
 # this version has design for google cloud function
 
 import shapefile
+from pyproj import Proj, transform
 import pandas as pd
 from collections import OrderedDict
 from json import dumps
 from google.cloud import storage
 from google.cloud import bigquery
+import fiona
 import zipfile
 import os
 import glob
@@ -34,13 +36,26 @@ def csvtobq(source_file, **kwargs):
 def loadtobq(csvfilename, shpname):
     with open(csvfilename, mode='rb') as csvfile:
         csvtobq(csvfile, table_id=shpname)
-    print(f'LOAD to demos.{table_id} SUCCESS')
+    print(f'LOAD to demos.{shpname} SUCCESS')
+
+def reproject(geom,crs='EPSG:32647'):
+    # Define dictionary representation of output feature collection
+    from_crs = Proj(init=crs)
+    to_crs = Proj(init='epsg:4326')
+    # Iterate through each feature of the feature collection
+    new_coords = []
+    for i,shape in enumerate(geom['coordinates']):
+        x, y = transform(from_crs, to_crs, *zip(*shape))
+        new_coords.append([list(a) for a in zip(x, y)])
+    geom['coordinates']=new_coords
+    return geom
 
 def shptodf(shppath):
-    shpfilename = os.path.join(
-                            os.path.dirname(shppath),
-                            glob.glob1(os.path.dirname(shppath), '*.shp')[0])
+    shpfilename = os.path.join(os.path.dirname(shppath),
+                               glob.glob1(os.path.dirname(shppath), '*.shp')[0])
     shpname = os.path.basename(os.path.splitext(shpfilename)[0])
+    with fiona.open(shppath, 'r') as source:
+        crs=source.crs
     try:
         reader = shapefile.Reader(shpfilename, encoding='utf-8')
         shapeRecords = reader.shapeRecords()
@@ -53,10 +68,13 @@ def shptodf(shppath):
     for sr in shapeRecords:
         atr = dict(zip(field_names, sr.record))
         geom = sr.shape.__geo_interface__
+        if crs['init'] != 'epsg:4326':
+            geom = reproject(geom,crs['init'])
         row = OrderedDict()
         row["geom"] = dumps(geom)
         row.update(atr)
         buffer.append(row)
+    reader.close()
     return pd.DataFrame(buffer)
 
 def shptocsv(shppath):
@@ -78,7 +96,7 @@ def main(data, context):
         with zipfile.ZipFile(zipfilepath, 'r') as zip_ref:
             test_result=zip_ref.testzip()
             if test_result:
-                print(f"First bad file in zip: {ret}")
+                print(f"First bad file in zip: ")
                 sys.exit(1)
             rootdirzips=[x for x in zip_ref.namelist() if re.match('^[\w\s]+\/$', x) and
                          x not in ['__MACOSX/', '.DS_Store/']]
