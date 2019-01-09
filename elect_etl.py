@@ -133,7 +133,9 @@ def clean_tesban(df):
     #         df.iloc[i+1]=''
     for i in df[df.str.startswith('เทศบาลเมือง') | df.str.startswith('เทศบาลนคร')].index:
         if not any(df.iloc[i + 1].startswith(x) for x in ['เทศบาล', 'ตำบล']) and \
-                len(df.iloc[i + 1]) > 0 or df.iloc[i].endswith("-"):
+                len(df.iloc[i + 1]) > 0 or \
+                df.iloc[i].endswith("-") or \
+                (df.iloc[i].endswith("นิคมสร้างตนเอง") and df.iloc[i+1].endswith("ลำโดมน้อย")):
             df.iloc[i] = df.iloc[i] + df.iloc[i + 1]
             df.iloc[i + 1] = ''
         df.iloc[i] = df.iloc[i].replace('(', '')
@@ -193,6 +195,14 @@ def clean_brace(dframe, delstart):
             havecondition = False
     return dframe.str.replace(f'(\({"|".join(delstart)}|^และ|\)$)', '', regex=True)
 
+def editTambonDf(P,A,T,new):
+    for col in ['interior', 'exterior']:
+        try:
+            templist = df.loc[(df['จังหวัด'] == P) &
+                              (df['ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง'] == A) &
+                              (df['interior'].apply(lambda x: T in x)), [col]]
+            df.loc[templist.index[0], col] = [new if x == T else x for x in templist.iloc[0][0]]
+        except:pass
 
 df['interior'] = ''
 df['interior'] = clean_brace(df['interior'], ['เฉพาะตำบล', 'เฉพาะ'])
@@ -202,7 +212,6 @@ df['exterior'] = ''
 df['exterior'] = clean_brace(df['exterior'], ['ยกเว้นตำบล', 'ยกเว้น'])
 
 
-#
 
 df.replace('[()]', '', regex=True, inplace=True)
 clean_tesban(df.interior)
@@ -213,6 +222,9 @@ df = df[df['ท้องที่ที่ประกอบเป็นเข�
 df['ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง'] = df['ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง'].str.strip()
 df['ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง'][df['ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง'] == 'กันทรลักษณ์'] = 'กันทรลักษ์'
 df['ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง'][df['ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง'] == 'สนามชัย'] = 'สนามชัยเขต'
+editTambonDf('สุรินทร์','เมืองสุรินทร์','อ็อง',new='ตาอ็อง')
+editTambonDf('สุรินทร์','เมืองสุรินทร์','ปะทัดบุ',new='ประทัดบุ')
+editTambonDf('สุรินทร์','เมืองสุรินทร์','ศีขรภูมิ',new='จารพัต')
 
 startindex = df[(df['ลำดับที่'] == '58') & df.ท้องที่ที่ประกอบเป็นเขตเลือกตั้ง.str.contains('เมืองนครสวรรค์')].index
 df['interior'].loc[startindex[0]] = ["นครสวรรค์ตก(ในเทศบาลนครนครสวรรค์)",
@@ -250,7 +262,8 @@ shpdf.loc[shpdf['A_NAME_T'] == 'ว่านใหญ่', 'A_NAME_T'] = 'หว
 shpdf.loc[shpdf['A_NAME_T'] == 'บึงกาฬ', 'A_NAME_T'] = 'เมืองบึงกาฬ'
 shpdf.loc[shpdf['A_NAME_T'] == 'สุไหงโกลก', 'A_NAME_T'] = 'สุไหงโก-ลก'
 
-
+### ตำบลนิคมลำโดมน้อย เผลี่ยนชื่อเป็น นิคมสร้างตนเองลำโดมน้อย
+shpdf.loc[shpdf['T_NAME_T'] == 'นิคมลำโดมน้อย', 'T_NAME_T'] = 'นิคมสร้างตนเองลำโดมน้อย'
 ## เปลี่ยนชื่ออำเภอจาก หนองบุนนาก เป็น หนองบุญมาก
 shpdf.loc[shpdf['A_NAME_T'] == 'หนองบุนนาก', 'A_NAME_T'] = 'หนองบุญมาก'
 
@@ -318,21 +331,31 @@ th_map_df['id'] = th_map_df['id'].apply(str)
 
 
 import requests
-key="D0B70A7F-8517CB28-588C0685-7DDBD2A0-B17E68EE-4C08413F-DED60B5F-E3B5C36F"
-bbox={'lon_min':'104.026',
-'lon_max':'104.8650',
-'lat_min':'16.677',
-'lat_max':'18.009'}
-bbox='{0[lon_min]},{0[lat_min]},{0[lon_max]},{0[lat_max]}'.format(bbox)
-# "http://api.wikimapia.org/?key={}&function=box&coordsby=bbox&bbox=104.297,17.042,104.848,17.718&category=7227&count=100&format=json
-url = f"http://api.wikimapia.org/?key={key}&function=box&coordsby=bbox&bbox={bbox}&language=th&category=7227&count=100&format=json"
-j=requests.get(url).json()
 
-k=[x for x in j['folder'] if x['name']=='เทศบาลเมืองนครพนม'][0]
-geom={}
-geom['type']='Polygon'
-geom['coordinates']=[[[x['x'],x['y']] for x in k["polygon"]]]
+def getShapeFromName(location,wikimapiakey, gmaptoken):
+    gmap_client = googlemaps.Client(gmaptoken)
+    gmap_result = gmap_client.geocode('เทศบาลเมืองนครพนม')
+    point = gmap_result[0]['geometry']['location']
+    bbox={'lon_min':f'{point["lng"] - 0.1}',
+    'lon_max':f'{point["lng"] + 0.1}',
+    'lat_min':f'{point["lat"] - 0.1}',
+    'lat_max':f'{point["lat"] + 0.1}'}
+    bbox='{0[lon_min]},{0[lat_min]},{0[lon_max]},{0[lat_max]}'.format(bbox)
+    # "http://api.wikimapia.org/?key={}&function=box&coordsby=bbox&bbox=104.297,17.042,104.848,17.718&category=7227&count=100&format=json
+    url = f"http://api.wikimapia.org/?key={wikimapiakey}&function=box&coordsby=bbox&bbox={bbox}&language=th&category=7227&count=100&format=json"
+    j=requests.get(url).json()
+    k=[x for x in j['folder'] if x['name']==location][0]
+    geom={}
+    geom['type']='Polygon'
+    geom['coordinates']=[[[x['x'],x['y']] for x in k["polygon"]]]
+    return geom
 
-
+wikimapiakey = ""
+gmaptoken = ""
+getShapeFromName(location, wikimapiakey, gmaptoken)
 import geopandas as gpd
 gpd.read_file()
+
+import googlemaps
+gmap_client=googlemaps.Client("AIzaSyBkdiNMQbWx9jV4LeM1ulKs7Ejankpnb_I")
+gmap_result=gmap_client.geocode('เทศบาลเมืองนครพนม')
